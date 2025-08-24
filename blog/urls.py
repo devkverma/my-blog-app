@@ -13,5 +13,5 @@ urlpatterns = [
     path("users/<uuid:pk>/following/", user_following, name="user_following"),
     path("users/<uuid:pk>/posts/", user_posts, name="user_posts"),
     path("feed/", feed, name="feed"),
-    path("posts/<uuid:pk>/", post_detail, name="post_detail"),
+    path("posts/<int:pk>/", post_detail, name="post_detail"),
 ]

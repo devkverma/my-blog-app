@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_protect, csrf_exempt
 from django.shortcuts import redirect, reverse, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
-
+from django.forms.models import model_to_dict
 # Create your views here.
 
 def home (request):
@@ -128,7 +128,7 @@ def user_signup (request):
             'message' : 'Create a new user',
             'redirect_to' : reverse('signup'),
         },
-        status = 400
+        status = 200
     )
 
 @csrf_exempt
@@ -186,6 +186,7 @@ def user_logout(request):
         
     return JsonResponse(
         {
+            "status" : 200,
             "message": message,
             "redirect_to": reverse("login")
         },
@@ -202,7 +203,7 @@ def user_detail(request, pk):
     # Stats
     posts_count = Post.objects.filter(author=user).count()
     followers_count = Follow.objects.filter(following=user).count()
-    following_count = Follow.objects.filter(follower=user).count()
+    following_count = Follow.objects.filter(followers=user).count()
 
     # Recent posts
     recent_posts = list(
@@ -224,6 +225,7 @@ def user_detail(request, pk):
             "id",
             "content",
             "posted_at",
+            "user__id",
             "user__username",
             "post__id",
             "post__title"
@@ -240,46 +242,138 @@ def user_detail(request, pk):
     recent_followers = list(
         Follow.objects
         .filter(following=user)
-        .select_related("follower")
+        .select_related("followers")
         .order_by("-followed_at")[:5]
         .values(
             "id",
-            "follower__username",
+            "followers__username",
+            "followers__id",
             "followed_at"
         )
     )
 
     for follower in recent_followers:
-        follower["user_link"] = reverse("user_detail", kwargs={"pk": follower["follower__id"]})
+        follower["user_link"] = reverse("user_detail", kwargs={"pk": follower["followers__id"]})
 
+    blog_user = getattr(user, "bloguser", None)
     return JsonResponse({
+        "status" : 200,
         "user": {
             "username": user.username,
             "followers_count": followers_count,
             "following_count": following_count,
             "posts_count": posts_count,
-            "joined_at": getattr(user, "joined_at", user.joined_at).isoformat(),
+            "joined_at": blog_user.joined_at.isoformat() if blog_user else None,
         },
         "recent_posts": recent_posts,
         "recent_comments": recent_comments,
         "recent_followers": recent_followers,
+        "followers" : reverse("user_followers", kwargs = {"pk" : user.id}),
+        "following" : reverse("user_following", kwargs = {"pk" : user.id})
     }, safe=False, status = 200)
     
 
 def user_followers (request, pk):
-    pass
+    user = get_object_or_404(User, id = pk)
+
+    followers = list(
+        Follow.objects.filter(following = user)
+                .select_related("followers")
+                .order_by("-followed_at")
+                .values(
+                    "id",
+                    "followers__username",
+                    "followed_at"
+                )
+    )
+
+    return JsonResponse(
+        {
+            "status" : 200,
+            "followers" : followers
+        },
+        status = 200
+    )
 
 def user_following (request, pk):
-    pass
+    user = get_object_or_404(User, id = pk)
+
+    followings = list(
+        Follow.objects.filter(followers = user)
+                .select_related("following")
+                .order_by("-followed_at")
+                .values(
+                    "id",
+                    "following__username",
+                    "followed_at"
+                )
+    )
+
+    return JsonResponse(
+        {
+            "status" : 200,
+            "followings" : followings
+        },
+        status = 200
+    )
 
 def user_posts (request, pk):
-    pass
 
-def feed (request, pk):
-    pass
+    user = get_object_or_404(User, id = pk)
+    posts = list(
+        Post.objects.filter(author = user)
+        .order_by('-created_at')
+        .values(
+            "id",
+            "author",
+            "title",
+            "created_at",
+            "content",
+            "likes",
+        )
+    )
+
+    return JsonResponse(
+        {
+            "status" : 200,
+            "posts" : posts,
+        },
+        status = 200
+    )
+
+def feed (request):
+    user = request.user
+    posts = []
+    followings = Follow.objects.filter(followers = user)
+
+    for following in followings:
+        post = list(
+            Post.objects.filter(author = following.following).values("id","author","title","created_at","content","likes",)
+        )
+        for p in post:
+            p["link"] = reverse("post_detail", kwargs={"pk": p["id"]})
+
+        posts.append(post)
+
+    return JsonResponse(
+        {
+            "status" : 200,
+            "feed_posts" : posts
+        }
+    )
 
 def post_detail (request, pk):
-    pass
+    post = get_object_or_404(Post, id = pk)
+    post_data = {
+        "id": post.id,
+        "author": post.author.username,   
+        "title": post.title,
+        "tags": post.tags,
+        "content": post.content,
+        "likes": post.likes,
+    }
+    post_data['post_link'] = reverse("post_detail", kwargs={"pk": post_data["id"]})
+    return JsonResponse({"status": 200, "post_detail": post_data})
 
 @login_required
 def dashboard(request):
@@ -287,8 +381,8 @@ def dashboard(request):
         "links": {
             "profile": reverse("user_detail", kwargs={"pk": request.user.id}),
             "feed": reverse("feed"),
-            "search": reverse("search"),
-            "my_posts": reverse("my_posts"),
+            # "search": reverse("search"),    # write a view for this
+            "my_posts": reverse("user_posts", kwargs={"pk": request.user.id}),  
             "logout": reverse("logout"),
         }
     })

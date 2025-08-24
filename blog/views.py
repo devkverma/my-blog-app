@@ -2,10 +2,8 @@ from django.http import JsonResponse
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from .models import *
 from django.views.decorators.csrf import csrf_protect, csrf_exempt
-from django.shortcuts import redirect, reverse, get_object_or_404
+from django.shortcuts import  reverse, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count
-from django.forms.models import model_to_dict
 # Create your views here.
 
 def home (request):
